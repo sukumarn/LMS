@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id               String       @id @default(uuid()) @db.Uuid
+  name             String
+  email            String       @unique
+  role             UserRole     @default(USER)
+  image            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  enrollments      Enrollment[]
+  createdCourses   Course[]     @relation("CourseCreator")
+}
+
+model Course {
+  id               String       @id @default(uuid()) @db.Uuid
+  slug             String       @unique
+  title            String
+  shortDescription String
+  description      String
+  category         String
+  level            String
+  instructorName   String
+  thumbnailUrl     String?
+  priceInCents     Int          @default(0)
+  status           CourseStatus @default(DRAFT)
+  createdById      String       @db.Uuid
+  createdBy        User         @relation("CourseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  lessons          Lesson[]
+  enrollments      Enrollment[]
+
+  @@index([status])
+}
+
+model Lesson {
+  id              String         @id @default(uuid()) @db.Uuid
+  title           String
+  slug            String
+  description     String
+  videoUrl        String
+  durationMinutes Int
+  position        Int
+  courseId        String         @db.Uuid
+  course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  material        LessonMaterial?
+  quiz            LessonQuiz?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([courseId, slug])
+  @@unique([courseId, position])
+}
+
+model LessonMaterial {
+  id        String   @id @default(uuid()) @db.Uuid
+  lessonId  String   @unique @db.Uuid
+  title     String
+  type      String
+  url       String
+  summary   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+model LessonQuiz {
+  id               String   @id @default(uuid()) @db.Uuid
+  lessonId         String   @unique @db.Uuid
+  title            String
+  description      String?
+  questionCount    Int      @default(0)
+  timeLimitMinutes Int      @default(10)
+  passPercentage   Int      @default(70)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lesson           Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+model Enrollment {
+  id              String           @id @default(uuid()) @db.Uuid
+  progressPercent Int              @default(0)
+  status          EnrollmentStatus @default(ACTIVE)
+  userId          String           @db.Uuid
+  courseId        String           @db.Uuid
+  enrolledAt      DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course          Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}

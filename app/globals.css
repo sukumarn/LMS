@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 216 100% 98%;
+    --foreground: 225 36% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 225 36% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 225 36% 10%;
+    --primary: 224 93% 61%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 33% 95%;
+    --secondary-foreground: 225 33% 16%;
+    --muted: 220 35% 94%;
+    --muted-foreground: 223 18% 43%;
+    --accent: 168 83% 47%;
+    --accent-foreground: 223 65% 9%;
+    --border: 220 32% 88%;
+    --input: 220 32% 88%;
+    --ring: 224 93% 61%;
+  }
+
+  .dark {
+    --background: 225 43% 7%;
+    --foreground: 210 40% 96%;
+    --card: 226 36% 12%;
+    --card-foreground: 210 40% 96%;
+    --popover: 226 36% 12%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 220 100% 68%;
+    --primary-foreground: 225 43% 7%;
+    --secondary: 225 24% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 225 25% 15%;
+    --muted-foreground: 218 18% 70%;
+    --accent: 169 100% 41%;
+    --accent-foreground: 225 43% 7%;
+    --border: 225 21% 20%;
+    --input: 225 21% 20%;
+    --ring: 220 100% 68%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "cv02", "cv03", "cv04";
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-white/10 bg-white/75 shadow-soft backdrop-blur-2xl dark:bg-white/5 dark:shadow-glass;
+  }
+
+  .gradient-border {
+    position: relative;
+  }
+
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(110, 143, 255, 0.52), rgba(43, 231, 197, 0.3), rgba(255, 255, 255, 0.08));
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}

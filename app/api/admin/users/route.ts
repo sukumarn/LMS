@@ -6,7 +6,7 @@ import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/s
 export async function GET() {
   const session = await getDemoSession();
 
-  if (!isAdminRole(session.user.role) || !session.activeClient) {
+  if (!isAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -90,21 +90,13 @@ export async function GET() {
   // Sort by created_at descending
   users.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  return NextResponse.json({
-    users,
-    _debug: {
-      appUsersCount: appUsers?.length ?? 0,
-      authUsersCount: authData?.users?.length ?? 0,
-      authError: authError?.message ?? null,
-      mergedCount: merged.size,
-    },
-  });
+  return NextResponse.json({ users });
 }
 
 export async function POST(request: Request) {
   const session = await getDemoSession();
 
-  if (!isAdminRole(session.user.role) || !session.activeClient) {
+  if (!isAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

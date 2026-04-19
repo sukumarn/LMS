@@ -10,11 +10,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getDemoSession, isAdminRole } from "@/lib/demo-session";
 import { getAdminCourseOptions, getAdminCourseSummaries } from "@/lib/lms-data";
+import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/server";
 
 export default async function AdminPage() {
   const session = await getDemoSession();
   const isAdmin = isAdminRole(session.user.role);
-  const [courses, courseOptions] = await Promise.all([getAdminCourseSummaries(session), getAdminCourseOptions(session)]);
+  const [courses, courseOptions, allClients] = await Promise.all([
+    getAdminCourseSummaries(session),
+    getAdminCourseOptions(session),
+    hasSupabaseAdminEnv()
+      ? createSupabaseAdminClient().from("clients").select("id, name").eq("status", "ACTIVE")
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  ]);
 
   if (!isAdmin) {
     return (
@@ -101,7 +108,7 @@ export default async function AdminPage() {
             </div>
           </div>
           <PendingUsers
-            clients={session.memberships.map((m) => ({ id: m.clientId, name: m.clientName }))}
+            clients={(allClients.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
           />
         </CardContent>
       </Card>

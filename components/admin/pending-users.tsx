@@ -29,6 +29,7 @@ type Props = {
 export function PendingUsers({ clients }: Props) {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [selections, setSelections] = useState<Record<string, { clientId: string; role: string }>>({});
@@ -37,6 +38,7 @@ export function PendingUsers({ clients }: Props) {
     fetch("/api/admin/users")
       .then((r) => r.json())
       .then((data) => {
+        if (data.error) { setFetchError(data.error); return; }
         const rows: UserRow[] = data.users ?? [];
         setUsers(rows);
         const initial: Record<string, { clientId: string; role: string }> = {};
@@ -82,6 +84,10 @@ export function PendingUsers({ clients }: Props) {
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading users...</p>;
+  }
+
+  if (fetchError) {
+    return <p className="text-sm text-destructive">Error loading users: {fetchError}</p>;
   }
 
   if (!users.length) {

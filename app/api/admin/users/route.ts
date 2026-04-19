@@ -90,7 +90,15 @@ export async function GET() {
   // Sort by created_at descending
   users.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  return NextResponse.json({ users });
+  return NextResponse.json({
+    users,
+    _debug: {
+      appUsersCount: appUsers?.length ?? 0,
+      authUsersCount: authData?.users?.length ?? 0,
+      authError: authError?.message ?? null,
+      mergedCount: merged.size,
+    },
+  });
 }
 
 export async function POST(request: Request) {

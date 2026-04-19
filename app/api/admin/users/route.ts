@@ -1,12 +1,55 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 
-import { getDemoSession, isAdminRole } from "@/lib/demo-session";
-import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/server";
+import { authOptions } from "@/lib/auth";
+import { createSupabaseAdminClient, createSupabaseServerClient, hasSupabaseAdminEnv, hasSupabasePublicEnv } from "@/lib/supabase/server";
+
+async function getRequestUserEmail(): Promise<string | null> {
+  // Try NextAuth first
+  try {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.email) return session.user.email;
+  } catch {}
+
+  // Fall back to Supabase Auth
+  if (!hasSupabasePublicEnv()) return null;
+  try {
+    const supabase = createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.email ?? null;
+  } catch {}
+
+  return null;
+}
+
+async function assertAdminAccess() {
+  const email = await getRequestUserEmail();
+  if (!email) return false;
+
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (adminEmail && email === adminEmail) return true;
+
+  // Also allow users with ADMIN or INSTRUCTOR role in client_memberships
+  if (!hasSupabaseAdminEnv()) return false;
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data: userRow } = await admin.from("users").select("id").eq("email", email).maybeSingle();
+    if (!userRow) return false;
+    const { data: membership } = await admin
+      .from("client_memberships")
+      .select("role")
+      .eq("user_id", userRow.id)
+      .in("role", ["ADMIN", "INSTRUCTOR"])
+      .eq("status", "ACTIVE")
+      .maybeSingle();
+    return !!membership;
+  } catch {}
+
+  return false;
+}
 
 export async function GET() {
-  const session = await getDemoSession();
-
-  if (!isAdminRole(session.user.role)) {
+  if (!(await assertAdminAccess())) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -94,9 +137,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getDemoSession();
-
-  if (!isAdminRole(session.user.role)) {
+  if (!(await assertAdminAccess())) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

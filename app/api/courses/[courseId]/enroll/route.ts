@@ -7,7 +7,6 @@ const DEFAULT_CLIENT_ID = "b1776b77-2994-49fb-bb10-6db11ad1f001"; // Operator Ca
 
 async function ensureUserExists(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
-  userId: string,
   email: string,
   name: string,
   image: string | null
@@ -44,20 +43,19 @@ async function ensureUserExists(
     return { userId: existingUser.id, error: null };
   }
 
-  // User doesn't exist — insert with the auth UUID so app users and auth users stay aligned.
-  const { data: newUser, error: insertError } = await supabase
+  // User doesn't exist yet — upsert by unique email so repeated registration attempts are safe.
+  const { data: newUser, error: upsertError } = await supabase
     .from("users")
-    .insert({
-      id: userId,
+    .upsert({
       email: normalizedEmail,
       name,
       image: image ?? null
-    })
+    }, { onConflict: "email" })
     .select("id")
     .single();
 
-  if (insertError) {
-    // A concurrent request may have inserted the user. Retry one lookup before failing.
+  if (upsertError) {
+    // A concurrent request may still win before the response returns. Retry one lookup before failing.
     const { data: recoveredUser } = await supabase
       .from("users")
       .select("id")
@@ -68,8 +66,8 @@ async function ensureUserExists(
       return { userId: recoveredUser.id, error: null };
     }
 
-    console.error("[enroll] user insert error:", insertError);
-    return { userId: null, error: insertError };
+    console.error("[enroll] user upsert error:", upsertError);
+    return { userId: null, error: upsertError };
   }
 
   return { userId: newUser.id, error: null };
@@ -98,7 +96,6 @@ export async function POST(_: Request, { params }: { params: { courseId: string 
   // Ensure user exists in the users table
   const { userId: internalUserId, error: userError } = await ensureUserExists(
     supabase,
-    session.user.id,
     session.user.email,
     session.user.name,
     session.user.image ?? null

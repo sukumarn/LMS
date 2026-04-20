@@ -48,17 +48,43 @@ export async function POST(request: NextRequest) {
     const payload = parsed.data;
     const baseSlug = slugify(payload.title);
     const supabase = createSupabaseAdminClient();
-    const { error: userUpsertError } = await supabase.from("users").upsert(
-      {
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
-        image: session.user.image ?? null
-      },
-      { onConflict: "id" }
-    );
+    let createdById = session.user.id;
 
-    if (userUpsertError) throw userUpsertError;
+    const normalizedEmail = session.user.email.trim().toLowerCase();
+    const { data: existingUser, error: existingUserError } = await supabase
+      .from("users")
+      .select("id")
+      .ilike("email", normalizedEmail)
+      .maybeSingle();
+
+    if (existingUserError) throw existingUserError;
+
+    if (existingUser?.id) {
+      createdById = existingUser.id;
+      const { error: userUpdateError } = await supabase
+        .from("users")
+        .update({
+          name: session.user.name,
+          image: session.user.image ?? null
+        })
+        .eq("id", existingUser.id);
+
+      if (userUpdateError) throw userUpdateError;
+    } else {
+      const { data: insertedUser, error: userInsertError } = await supabase
+        .from("users")
+        .insert({
+          id: session.user.id,
+          email: normalizedEmail,
+          name: session.user.name,
+          image: session.user.image ?? null
+        })
+        .select("id")
+        .single();
+
+      if (userInsertError) throw userInsertError;
+      createdById = insertedUser.id;
+    }
 
     const { data: existingRows, error: existingError } = await supabase
       .from("courses")
@@ -83,7 +109,7 @@ export async function POST(request: NextRequest) {
         thumbnail_url: payload.thumbnailUrl || null,
         price_in_cents: payload.priceInCents,
         status: payload.status,
-        created_by_id: session.user.id
+        created_by_id: createdById
       })
       .select("*")
       .single();

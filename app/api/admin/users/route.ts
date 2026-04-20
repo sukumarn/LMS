@@ -4,6 +4,28 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { createSupabaseAdminClient, createSupabaseServerClient, hasSupabaseAdminEnv, hasSupabasePublicEnv } from "@/lib/supabase/server";
 
+async function listAllAuthUsers(admin: ReturnType<typeof createSupabaseAdminClient>) {
+  const users: Array<Record<string, any>> = [];
+  let page = 1;
+  const perPage = 200;
+
+  while (true) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      return { users, error };
+    }
+
+    const pageUsers = data?.users ?? [];
+    users.push(...pageUsers);
+
+    if (pageUsers.length < perPage) {
+      return { users, error: null };
+    }
+
+    page += 1;
+  }
+}
+
 async function getRequestUserEmail(): Promise<string | null> {
   // Try NextAuth first
   try {
@@ -64,39 +86,47 @@ export async function GET() {
   const [
     { data: appUsers, error: usersError },
     { data: memberships },
-    { data: authData, error: authError },
+    authUsersResult,
   ] = await Promise.all([
     admin.from("users").select("id, email, name, image, created_at"),
     admin.from("client_memberships").select("user_id, client_id, role, status"),
-    admin.auth.admin.listUsers(),
+    listAllAuthUsers(admin),
   ]);
 
   if (usersError) {
     return NextResponse.json({ error: usersError.message }, { status: 500 });
   }
 
-  const membershipMap = new Map<string, { clientId: string; role: string; status: string }>();
+  const membershipMap = new Map<string, { clientId: string | null; role: string | null; status: string | null; rank: number }>();
   for (const m of memberships ?? []) {
-    membershipMap.set((m as any).user_id, {
-      clientId: (m as any).client_id,
-      role: (m as any).role,
-      status: (m as any).status,
-    });
+    const row = m as any;
+    const nextRank = row.status === "ACTIVE" ? 2 : row.status === "INVITED" ? 1 : 0;
+    const current = membershipMap.get(row.user_id);
+    if (!current || nextRank >= current.rank) {
+      membershipMap.set(row.user_id, {
+        clientId: row.client_id ?? null,
+        role: row.role ?? null,
+        status: row.status ?? null,
+        rank: nextRank,
+      });
+    }
   }
 
   // Build a map of app users keyed by email for quick lookup
   const appUserByEmail = new Map<string, any>();
   for (const u of appUsers ?? []) {
-    appUserByEmail.set((u as any).email, u);
+    const email = ((u as any).email as string).toLowerCase();
+    appUserByEmail.set(email, u);
   }
 
   // Merge: start with app users table rows
   const merged = new Map<string, any>();
   for (const u of appUsers ?? []) {
-    if ((u as any).email === adminEmail) continue;
+    const email = ((u as any).email as string).toLowerCase();
+    if (adminEmail && email === adminEmail.toLowerCase()) continue;
     merged.set((u as any).id, {
       id: (u as any).id,
-      email: (u as any).email,
+      email,
       name: (u as any).name,
       image: (u as any).image,
       created_at: (u as any).created_at,
@@ -104,15 +134,28 @@ export async function GET() {
   }
 
   // Add Supabase Auth users who don't have a users table row yet
-  if (!authError && authData?.users) {
-    for (const authUser of authData.users) {
-      if (!authUser.email || authUser.email === adminEmail) continue;
-      if (!appUserByEmail.has(authUser.email)) {
+  if (!authUsersResult.error) {
+    for (const authUser of authUsersResult.users) {
+      const email = authUser.email?.toLowerCase();
+      if (!email) continue;
+      if (adminEmail && email === adminEmail.toLowerCase()) continue;
+
+      const existingAppUser = appUserByEmail.get(email);
+      if (existingAppUser) {
+        const existing = merged.get(existingAppUser.id);
+        if (existing) {
+          merged.set(existingAppUser.id, {
+            ...existing,
+            name: existing.name || authUser.user_metadata?.full_name || email,
+            image: existing.image ?? authUser.user_metadata?.avatar_url ?? null,
+          });
+        }
+      } else {
         // This user signed in via OAuth but upsert never ran — show them anyway
         merged.set(authUser.id, {
           id: authUser.id,
-          email: authUser.email,
-          name: authUser.user_metadata?.full_name || authUser.email,
+          email,
+          name: authUser.user_metadata?.full_name || email,
           image: authUser.user_metadata?.avatar_url ?? null,
           created_at: authUser.created_at,
         });

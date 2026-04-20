@@ -106,6 +106,8 @@ export function PendingUsers({ clients }: Props) {
 
       {users.map((user) => {
         const hasMembership = !!user.currentRole;
+        const isApproved = user.membershipStatus === "ACTIVE";
+        const isPending = !hasMembership || !isApproved;
         const isDirty =
           selections[user.id]?.role !== user.currentRole ||
           selections[user.id]?.clientId !== user.currentClientId;
@@ -119,7 +121,7 @@ export function PendingUsers({ clients }: Props) {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <p className="font-medium truncate">{user.name}</p>
-                {!hasMembership && (
+                {isPending && (
                   <Badge variant="outline" className="text-xs text-amber-500 border-amber-500/30 shrink-0">
                     Pending
                   </Badge>
@@ -158,7 +160,7 @@ export function PendingUsers({ clients }: Props) {
               variant={saved === user.id ? "outline" : "default"}
               className="w-full lg:w-auto"
               onClick={() => save(user.id)}
-              disabled={saving === user.id || (!isDirty && hasMembership)}
+              disabled={saving === user.id || (!isDirty && hasMembership && isApproved)}
             >
               <Save className="h-4 w-4" />
               {saving === user.id ? "Saving..." : saved === user.id ? "Saved" : hasMembership ? "Update" : "Assign"}

@@ -51,22 +51,40 @@ export async function GET(request: Request) {
           if (authUser?.email) {
             const admin = createSupabaseAdminClient();
 
-            // Ensure user exists in the users table — omit role so DB default applies
-            // (avoids enum mismatch between USER/LEARNER across migrations)
-            await admin.from("users").upsert(
-              {
-                email: authUser.email,
-                name: authUser.user_metadata?.full_name || authUser.email,
-                image: authUser.user_metadata?.avatar_url ?? null,
-              },
-              { onConflict: "email", ignoreDuplicates: true }
-            );
+            // Ensure every authenticated user is materialized in public.users.
+            // Insert new rows with the auth UUID; update existing rows by email.
+            const normalizedEmail = authUser.email.toLowerCase();
+            const displayName = authUser.user_metadata?.full_name || authUser.email;
+            const avatarUrl = authUser.user_metadata?.avatar_url ?? null;
+
+            const { data: existingUser } = await admin
+              .from("users")
+              .select("id")
+              .eq("email", normalizedEmail)
+              .maybeSingle();
+
+            if (existingUser?.id) {
+              await admin
+                .from("users")
+                .update({
+                  name: displayName,
+                  image: avatarUrl,
+                })
+                .eq("id", existingUser.id);
+            } else {
+              await admin.from("users").insert({
+                id: authUser.id,
+                email: normalizedEmail,
+                name: displayName,
+                image: avatarUrl,
+              });
+            }
 
             // Check if the user has any org membership
             const { data: userRow } = await admin
               .from("users")
               .select("id")
-              .eq("email", authUser.email)
+              .eq("email", normalizedEmail)
               .maybeSingle();
 
             // Admin email always gets through regardless of membership state

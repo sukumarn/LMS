@@ -30,6 +30,7 @@ async function ensureUserExists(
     const { error: updateError } = await supabase
       .from("users")
       .update({
+        email: normalizedEmail,
         name,
         image: image ?? null
       })
@@ -104,7 +105,16 @@ export async function POST(_: Request, { params }: { params: { courseId: string 
   );
 
   if (userError || !internalUserId) {
-    return NextResponse.json({ error: "Unable to prepare learner profile" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Unable to prepare learner profile",
+        details:
+          typeof userError === "object" && userError && "message" in userError && typeof userError.message === "string"
+            ? userError.message
+            : undefined
+      },
+      { status: 500 }
+    );
   }
 
   activeClientId = activeClientId ?? DEFAULT_CLIENT_ID;

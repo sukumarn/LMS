@@ -54,8 +54,10 @@ export async function getDemoSession(): Promise<AppSession> {
     if (dbContext) {
       // Admin email always keeps ADMIN role regardless of what's stored in DB
       const role: AppRole = isAdminEmail ? "ADMIN" : dbContext.role;
+      // Use internal users-table ID so enrollment/quiz lookups match stored records
+      const resolvedId = dbContext.internalUserId ?? authUser.id;
       return {
-        user: { id: authUser.id, email: authUser.email, name: authUser.name, image: authUser.image ?? null, role },
+        user: { id: resolvedId, email: authUser.email, name: authUser.name, image: authUser.image ?? null, role },
         activeClient: dbContext.activeClient,
         memberships: dbContext.memberships,
         availableRoles: isAdminEmail ? ["ADMIN"] : dbContext.availableRoles
@@ -150,6 +152,7 @@ async function resolveUserContextFromDatabase(
       .maybeSingle();
 
     const internalUserId = userRow?.id ?? userId;
+    // Expose the resolved ID so callers can use it as session.user.id
 
     const { data: membershipRows } = await supabase
       .from("client_memberships")
@@ -177,6 +180,7 @@ async function resolveUserContextFromDatabase(
     const role = roleCookie && availableRoles.includes(roleCookie) ? roleCookie : availableRoles[0];
 
     return {
+      internalUserId,
       role,
       activeClient: {
         id: activeMembership.clientId,

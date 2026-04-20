@@ -8,10 +8,9 @@ export async function POST(req: NextRequest) {
   }
 
   const session = await getDemoSession();
-  if (!session.activeClient) {
-    return NextResponse.json({ error: "No active client selected" }, { status: 400 });
+  if (!session.user.email) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
-  const activeClientId = session.activeClient.id;
 
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
@@ -24,9 +23,33 @@ export async function POST(req: NextRequest) {
 
   const supabase = createSupabaseAdminClient();
 
+  // Resolve internal user ID by email to handle OAuth UUID mismatch
+  const { data: userRow } = await supabase
+    .from("users")
+    .select("id")
+    .eq("email", session.user.email)
+    .maybeSingle();
+  const userId = userRow?.id ?? session.user.id;
+
+  // Resolve active client from session or fall back to user's first membership
+  let activeClientId = session.activeClient?.id;
+  if (!activeClientId && userId) {
+    const { data: membership } = await supabase
+      .from("client_memberships")
+      .select("client_id")
+      .eq("user_id", userId)
+      .eq("status", "ACTIVE")
+      .maybeSingle();
+    activeClientId = membership?.client_id ?? undefined;
+  }
+
+  if (!activeClientId) {
+    return NextResponse.json({ error: "No active client" }, { status: 400 });
+  }
+
   const { error } = await supabase.from("quiz_attempts").insert({
     client_id: activeClientId,
-    user_id: session.user.id,
+    user_id: userId,
     quiz_id: quizId ?? null,
     score_percent: scorePercent,
     passed,

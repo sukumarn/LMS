@@ -6,6 +6,8 @@ import {
 } from "@/lib/supabase/server";
 import { isAdminRole, type AppSession } from "@/lib/demo-session";
 
+const DEFAULT_CLIENT_ID = "b1776b77-2994-49fb-bb10-6db11ad1f001"; // Operator Campus
+
 export type CatalogCourse = {
   id: string;
   slug: string;
@@ -109,7 +111,8 @@ export type DashboardOverview = {
 
 export async function getCatalogCourses(session: AppSession): Promise<CatalogCourse[]> {
   if (!hasSupabasePublicEnv()) return [];
-  if (!session.activeClient) return [];
+
+  const clientId = session.activeClient?.id ?? DEFAULT_CLIENT_ID;
 
   try {
     const canPreviewDrafts = isAdminRole(session.user.role) && hasSupabaseAdminEnv();
@@ -119,7 +122,7 @@ export async function getCatalogCourses(session: AppSession): Promise<CatalogCou
       .select(
         "id, slug, title, short_description, category, level, thumbnail_url, instructor_name, price_in_cents, status, lessons(id, title, duration_minutes, position)"
       )
-      .eq("client_id", session.activeClient.id)
+      .eq("client_id", clientId)
       .order("updated_at", { ascending: false })
       .order("position", { foreignTable: "lessons", ascending: true });
 
@@ -141,7 +144,7 @@ export async function getCatalogCourses(session: AppSession): Promise<CatalogCou
         .from("enrollments")
         .select("course_id, status")
         .eq("user_id", session.user.id)
-        .eq("client_id", session.activeClient.id)
+        .eq("client_id", clientId)
         .in("course_id", courseIds);
 
       if (!enrollmentError) {
@@ -181,7 +184,8 @@ export async function getCatalogCourses(session: AppSession): Promise<CatalogCou
 
 export async function getCourseBySlug(slug: string, session: AppSession): Promise<CourseDetail | null> {
   if (!hasSupabasePublicEnv()) return null;
-  if (!session.activeClient) return null;
+
+  const clientId = session.activeClient?.id ?? DEFAULT_CLIENT_ID;
 
   const canPreviewDrafts = isAdminRole(session.user.role) && hasSupabaseAdminEnv();
   const supabase = canPreviewDrafts ? createSupabaseAdminClient() : createSupabaseServerClient();
@@ -200,7 +204,7 @@ export async function getCourseBySlug(slug: string, session: AppSession): Promis
       .from("courses")
       .select(selectWithStatus)
       .eq("slug", slug)
-      .eq("client_id", session.activeClient.id)
+      .eq("client_id", clientId)
       .maybeSingle();
     if (error) throw error;
     course = data as Record<string, any> | null;
@@ -210,7 +214,7 @@ export async function getCourseBySlug(slug: string, session: AppSession): Promis
         .from("courses")
         .select(selectWithoutStatus)
         .eq("slug", slug)
-        .eq("client_id", session.activeClient.id)
+          .eq("client_id", clientId)
         .maybeSingle();
       if (error) throw error;
       course = data as Record<string, any> | null;
@@ -230,7 +234,7 @@ export async function getCourseBySlug(slug: string, session: AppSession): Promis
         .from("enrollments")
         .select("id")
         .eq("user_id", session.user.id)
-        .eq("client_id", session.activeClient.id)
+        .eq("client_id", clientId)
         .eq("course_id", course.id)
         .limit(1);
       isEnrolled = Boolean(enrollmentRows?.length);

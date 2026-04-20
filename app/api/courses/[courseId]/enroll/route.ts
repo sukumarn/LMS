@@ -16,19 +16,29 @@ export async function POST(_: Request, { params }: { params: { courseId: string 
   const activeClientId = session.activeClient.id;
 
   const supabase = createSupabaseAdminClient();
+
+  // Upsert by email (not id) to handle Google OAuth UUID vs internal UUID mismatch
   const { error: userUpsertError } = await supabase.from("users").upsert(
     {
-      id: session.user.id,
       email: session.user.email,
       name: session.user.name,
       image: session.user.image ?? null
     },
-    { onConflict: "id" }
+    { onConflict: "email", ignoreDuplicates: true }
   );
 
   if (userUpsertError) {
     return NextResponse.json({ error: "Unable to prepare learner profile" }, { status: 500 });
   }
+
+  // Resolve the internal user id (may differ from session.user.id for OAuth users)
+  const { data: userRow } = await supabase
+    .from("users")
+    .select("id")
+    .eq("email", session.user.email)
+    .maybeSingle();
+
+  const internalUserId = userRow?.id ?? session.user.id;
 
   const { data: course, error: courseError } = await supabase
     .from("courses")
@@ -55,7 +65,7 @@ export async function POST(_: Request, { params }: { params: { courseId: string 
       .upsert(
         {
           client_id: activeClientId,
-          user_id: session.user.id,
+          user_id: internalUserId,
           course_id: course.id,
           status: "ACTIVE"
         },

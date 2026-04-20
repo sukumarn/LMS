@@ -51,40 +51,53 @@ export async function GET(request: Request) {
           if (authUser?.email) {
             const admin = createSupabaseAdminClient();
 
-            // Ensure every authenticated user is materialized in public.users.
-            // Insert new rows with the auth UUID; update existing rows by email.
             const normalizedEmail = authUser.email.toLowerCase();
             const displayName = authUser.user_metadata?.full_name || authUser.email;
             const avatarUrl = authUser.user_metadata?.avatar_url ?? null;
 
-            const { data: existingUser } = await admin
+            const { data: existingUser, error: existingUserError } = await admin
               .from("users")
               .select("id")
-              .eq("email", normalizedEmail)
+              .ilike("email", normalizedEmail)
               .maybeSingle();
 
+            if (existingUserError) {
+              throw existingUserError;
+            }
+
             if (existingUser?.id) {
-              await admin
+              const { error: updateError } = await admin
                 .from("users")
                 .update({
+                  email: normalizedEmail,
                   name: displayName,
-                  image: avatarUrl,
+                  image: avatarUrl
                 })
                 .eq("id", existingUser.id);
+
+              if (updateError) {
+                throw updateError;
+              }
             } else {
-              await admin.from("users").insert({
-                id: authUser.id,
-                email: normalizedEmail,
-                name: displayName,
-                image: avatarUrl,
-              });
+              const { error: upsertError } = await admin.from("users").upsert(
+                {
+                  email: normalizedEmail,
+                  name: displayName,
+                  image: avatarUrl
+                },
+                { onConflict: "email" }
+              );
+
+              if (upsertError) {
+                throw upsertError;
+              }
             }
 
             // Check if the user has any org membership
             const { data: userRow } = await admin
               .from("users")
               .select("id")
-              .eq("email", normalizedEmail)
+              .ilike("email", normalizedEmail)
               .maybeSingle();
 
             // Admin email always gets through regardless of membership state

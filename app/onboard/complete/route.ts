@@ -72,21 +72,63 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=org_creation_failed`);
   }
 
-  // Upsert the user into public.users
-  await supabase.from("users").upsert(
-    {
-      id: user.id,
-      email: user.email ?? "",
-      name: user.user_metadata?.full_name ?? user.email ?? "Admin",
-      image: user.user_metadata?.avatar_url ?? null
-    },
-    { onConflict: "id" }
-  );
+  const normalizedEmail = (user.email ?? "").toLowerCase();
+  const displayName = user.user_metadata?.full_name ?? user.email ?? "Admin";
+  const avatarUrl = user.user_metadata?.avatar_url ?? null;
+
+  const { data: existingUser, error: existingUserError } = await supabase
+    .from("users")
+    .select("id")
+    .ilike("email", normalizedEmail)
+    .maybeSingle();
+
+  if (existingUserError) {
+    console.error("Failed to resolve onboarding user:", existingUserError.message);
+    return NextResponse.redirect(`${origin}/login?error=user_sync_failed`);
+  }
+
+  let internalUserId = existingUser?.id ?? user.id;
+
+  if (existingUser?.id) {
+    const { error: updateUserError } = await supabase
+      .from("users")
+      .update({
+        email: normalizedEmail,
+        name: displayName,
+        image: avatarUrl
+      })
+      .eq("id", existingUser.id);
+
+    if (updateUserError) {
+      console.error("Failed to update onboarding user:", updateUserError.message);
+      return NextResponse.redirect(`${origin}/login?error=user_sync_failed`);
+    }
+  } else {
+    const { data: insertedUser, error: insertUserError } = await supabase
+      .from("users")
+      .upsert(
+        {
+          email: normalizedEmail,
+          name: displayName,
+          image: avatarUrl
+        },
+        { onConflict: "email" }
+      )
+      .select("id")
+      .single();
+
+    if (insertUserError) {
+      console.error("Failed to create onboarding user:", insertUserError.message);
+      return NextResponse.redirect(`${origin}/login?error=user_sync_failed`);
+    }
+
+    internalUserId = insertedUser.id;
+  }
 
   // Add user as client admin of the new org
   await supabase.from("client_memberships").insert({
     client_id: client.id,
-    user_id: user.id,
+    user_id: internalUserId,
     role: "CLIENT_ADMIN",
     status: "ACTIVE"
   });
@@ -94,7 +136,7 @@ export async function GET(request: NextRequest) {
   // Mark token as used
   await supabase
     .from("onboarding_tokens")
-    .update({ used_at: new Date().toISOString(), used_by_user_id: user.id })
+    .update({ used_at: new Date().toISOString(), used_by_user_id: internalUserId })
     .eq("id", tokenRow.id);
 
   // Clear the onboarding cookie and redirect to dashboard

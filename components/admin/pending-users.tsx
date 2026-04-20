@@ -36,9 +36,16 @@ export function PendingUsers({ clients }: Props) {
 
   useEffect(() => {
     fetch("/api/admin/users")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) { setFetchError(data.error); return; }
+      .then(async (r) => {
+        const text = await r.text();
+        let data: any;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          setFetchError(`Server returned non-JSON (status ${r.status}): ${text.slice(0, 200)}`);
+          return;
+        }
+        if (data.error) { setFetchError(`API error: ${data.error}`); return; }
         const rows: UserRow[] = data.users ?? [];
         setUsers(rows);
         const initial: Record<string, { clientId: string; role: string }> = {};
@@ -51,6 +58,7 @@ export function PendingUsers({ clients }: Props) {
         });
         setSelections(initial);
       })
+      .catch((err) => setFetchError(`Network error: ${err?.message ?? err}`))
       .finally(() => setLoading(false));
   }, [clients]);
 

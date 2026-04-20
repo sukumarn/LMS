@@ -8,13 +8,14 @@ import { PendingUsers } from "@/components/admin/pending-users";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getDemoSession, isAdminRole } from "@/lib/demo-session";
+import { canManageUsers, getDemoSession, isAdminRole } from "@/lib/demo-session";
 import { getAdminCourseOptions, getAdminCourseSummaries } from "@/lib/lms-data";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/server";
 
 export default async function AdminPage() {
   const session = await getDemoSession();
   const isAdmin = isAdminRole(session.user.role);
+  const canEditUsers = canManageUsers(session.user.role);
   const [courses, courseOptions, allClients] = await Promise.all([
     getAdminCourseSummaries(session),
     getAdminCourseOptions(session),
@@ -98,20 +99,22 @@ export default async function AdminPage() {
 
       <CourseTable courses={courses} />
 
-      <Card>
-        <CardContent className="space-y-4 p-6">
-          <div className="flex items-center gap-3">
-            <Users className="h-5 w-5 text-primary" />
-            <div>
-              <h2 className="text-xl font-semibold">User management</h2>
-              <p className="text-sm text-muted-foreground">Assign or update workspace and role for any user.</p>
+      {canEditUsers ? (
+        <Card>
+          <CardContent className="space-y-4 p-6">
+            <div className="flex items-center gap-3">
+              <Users className="h-5 w-5 text-primary" />
+              <div>
+                <h2 className="text-xl font-semibold">User management</h2>
+                <p className="text-sm text-muted-foreground">Assign or update workspace and role for any user.</p>
+              </div>
             </div>
-          </div>
-          <PendingUsers
-            clients={(allClients.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
-          />
-        </CardContent>
-      </Card>
+            <PendingUsers
+              clients={(allClients.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

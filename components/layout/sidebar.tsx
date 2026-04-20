@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar, userRole } = useLMSStore();
-  const isAdmin = userRole === "ADMIN" || userRole === "INSTRUCTOR";
+  const isAdmin = userRole === "CLIENT_ADMIN" || userRole === "PRODUCT_ADMIN" || userRole === "INSTRUCTOR";
   const visibleNav = navigation.filter((item) => !item.adminOnly || isAdmin);
 
   return (

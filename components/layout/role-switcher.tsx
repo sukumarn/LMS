@@ -8,7 +8,8 @@ import type { AppRole } from "@/lib/demo-session";
 import { cn } from "@/lib/utils";
 
 const roleMeta: Record<AppRole, { label: string; icon: typeof Shield }> = {
-  ADMIN: { label: "Admin", icon: Shield },
+  PRODUCT_ADMIN: { label: "Platform Admin", icon: Shield },
+  CLIENT_ADMIN: { label: "Admin", icon: Shield },
   INSTRUCTOR: { label: "Instructor", icon: Building2 },
   LEARNER: { label: "Learner", icon: UserRound }
 };

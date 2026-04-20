@@ -9,7 +9,7 @@ import {
   hasSupabasePublicEnv
 } from "@/lib/supabase/server";
 
-export type AppRole = "ADMIN" | "INSTRUCTOR" | "LEARNER";
+export type AppRole = "PRODUCT_ADMIN" | "CLIENT_ADMIN" | "INSTRUCTOR" | "LEARNER";
 
 export type SessionMembership = {
   clientId: string;
@@ -40,7 +40,7 @@ export type AppSession = {
 
 export async function getDemoSession(): Promise<AppSession> {
   const cookieStore = cookies();
-  const roleCookie = cookieStore.get("nova-role")?.value as AppRole | undefined;
+  const roleCookie = normalizeAppRole(cookieStore.get("nova-role")?.value);
   const clientCookie = cookieStore.get("nova-client")?.value;
 
   const authUser = await resolveAuthenticatedUser();
@@ -52,25 +52,24 @@ export async function getDemoSession(): Promise<AppSession> {
     const dbContext = await resolveUserContextFromDatabase(authUser.id, authUser.email, clientCookie, roleCookie);
 
     if (dbContext) {
-      // Admin email always keeps ADMIN role regardless of what's stored in DB
-      const role: AppRole = isAdminEmail ? "ADMIN" : dbContext.role;
+      const role: AppRole = isAdminEmail ? "CLIENT_ADMIN" : dbContext.role;
       // Use internal users-table ID so enrollment/quiz lookups match stored records
       const resolvedId = dbContext.internalUserId ?? authUser.id;
       return {
         user: { id: resolvedId, email: authUser.email, name: authUser.name, image: authUser.image ?? null, role },
         activeClient: dbContext.activeClient,
         memberships: dbContext.memberships,
-        availableRoles: isAdminEmail ? ["ADMIN"] : dbContext.availableRoles
+        availableRoles: isAdminEmail ? ["CLIENT_ADMIN"] : dbContext.availableRoles
       };
     }
 
     // Admin email gets access even with no DB membership
     if (isAdminEmail) {
       return {
-        user: { id: authUser.id, email: authUser.email, name: authUser.name, image: authUser.image ?? null, role: "ADMIN" },
+        user: { id: authUser.id, email: authUser.email, name: authUser.name, image: authUser.image ?? null, role: "CLIENT_ADMIN" },
         activeClient: null,
         memberships: [],
-        availableRoles: ["ADMIN"]
+        availableRoles: ["CLIENT_ADMIN"]
       };
     }
 
@@ -166,7 +165,7 @@ async function resolveUserContextFromDatabase(
         clientName: membership.clients?.name as string,
         clientSlug: membership.clients?.slug as string,
         clientStatus: membership.clients?.status as string,
-        role: membership.role as AppRole,
+        role: normalizeAppRole(membership.role) ?? "LEARNER",
         status: membership.status as string
       }))
       .filter((m) => m.clientId && m.clientName);
@@ -197,9 +196,32 @@ async function resolveUserContextFromDatabase(
 }
 
 export function isAdminRole(role: AppRole) {
-  return role === "ADMIN" || role === "INSTRUCTOR";
+  return role === "PRODUCT_ADMIN" || role === "CLIENT_ADMIN" || role === "INSTRUCTOR";
+}
+
+export function canManageUsers(role: AppRole) {
+  return role === "PRODUCT_ADMIN" || role === "CLIENT_ADMIN";
 }
 
 export function isLearnerRole(role: AppRole) {
   return role === "LEARNER";
+}
+
+export function normalizeAppRole(role: string | null | undefined): AppRole | undefined {
+  if (!role) return undefined;
+
+  switch (role) {
+    case "PRODUCT_ADMIN":
+      return "PRODUCT_ADMIN";
+    case "CLIENT_ADMIN":
+    case "ADMIN":
+      return "CLIENT_ADMIN";
+    case "INSTRUCTOR":
+      return "INSTRUCTOR";
+    case "LEARNER":
+    case "USER":
+      return "LEARNER";
+    default:
+      return undefined;
+  }
 }

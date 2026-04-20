@@ -43,9 +43,10 @@ export function PendingUsers({ clients }: Props) {
         setUsers(rows);
         const initial: Record<string, { clientId: string; role: string }> = {};
         rows.forEach((u) => {
+          const normalizedRole = u.currentRole === "ADMIN" ? "CLIENT_ADMIN" : u.currentRole ?? "LEARNER";
           initial[u.id] = {
             clientId: u.currentClientId ?? clients[0]?.id ?? "",
-            role: u.currentRole ?? "LEARNER",
+            role: normalizedRole,
           };
         });
         setSelections(initial);
@@ -151,7 +152,7 @@ export function PendingUsers({ clients }: Props) {
             >
               <option value="LEARNER">Learner</option>
               <option value="INSTRUCTOR">Instructor</option>
-              <option value="ADMIN">Admin</option>
+              <option value="CLIENT_ADMIN">Admin</option>
             </select>
 
             {/* Save button */}

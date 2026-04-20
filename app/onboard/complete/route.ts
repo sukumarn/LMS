@@ -78,17 +78,16 @@ export async function GET(request: NextRequest) {
       id: user.id,
       email: user.email ?? "",
       name: user.user_metadata?.full_name ?? user.email ?? "Admin",
-      image: user.user_metadata?.avatar_url ?? null,
-      role: "ADMIN"
+      image: user.user_metadata?.avatar_url ?? null
     },
     { onConflict: "id" }
   );
 
-  // Add user as ADMIN of the new org
+  // Add user as client admin of the new org
   await supabase.from("client_memberships").insert({
     client_id: client.id,
     user_id: user.id,
-    role: "ADMIN",
+    role: "CLIENT_ADMIN",
     status: "ACTIVE"
   });
 

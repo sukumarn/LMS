@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 const payloadSchema = z.object({
-  role: z.enum(["ADMIN", "INSTRUCTOR", "LEARNER"]).optional().nullable(),
+  role: z.enum(["PRODUCT_ADMIN", "CLIENT_ADMIN", "ADMIN", "INSTRUCTOR", "LEARNER"]).optional().nullable(),
   clientId: z.string().uuid().optional().nullable()
 });
 

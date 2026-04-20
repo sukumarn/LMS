@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 
-import { authOptions } from "@/lib/auth";
-import { createSupabaseAdminClient, createSupabaseServerClient, hasSupabaseAdminEnv, hasSupabasePublicEnv } from "@/lib/supabase/server";
+import { canManageUsers, getDemoSession, normalizeAppRole } from "@/lib/demo-session";
+import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/server";
 
 async function listAllAuthUsers(admin: ReturnType<typeof createSupabaseAdminClient>) {
   const users: Array<Record<string, any>> = [];
@@ -26,52 +25,9 @@ async function listAllAuthUsers(admin: ReturnType<typeof createSupabaseAdminClie
   }
 }
 
-async function getRequestUserEmail(): Promise<string | null> {
-  // Try NextAuth first
-  try {
-    const session = await getServerSession(authOptions);
-    if (session?.user?.email) return session.user.email;
-  } catch {}
-
-  // Fall back to Supabase Auth
-  if (!hasSupabasePublicEnv()) return null;
-  try {
-    const supabase = createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    return user?.email ?? null;
-  } catch {}
-
-  return null;
-}
-
-async function assertAdminAccess() {
-  const email = await getRequestUserEmail();
-  if (!email) return false;
-
-  const adminEmail = process.env.ADMIN_EMAIL;
-  if (adminEmail && email === adminEmail) return true;
-
-  // Also allow users with ADMIN or INSTRUCTOR role in client_memberships
-  if (!hasSupabaseAdminEnv()) return false;
-  try {
-    const admin = createSupabaseAdminClient();
-    const { data: userRow } = await admin.from("users").select("id").eq("email", email).maybeSingle();
-    if (!userRow) return false;
-    const { data: membership } = await admin
-      .from("client_memberships")
-      .select("role")
-      .eq("user_id", userRow.id)
-      .in("role", ["ADMIN", "INSTRUCTOR"])
-      .eq("status", "ACTIVE")
-      .maybeSingle();
-    return !!membership;
-  } catch {}
-
-  return false;
-}
-
 export async function GET() {
-  if (!(await assertAdminAccess())) {
+  const session = await getDemoSession();
+  if (!canManageUsers(session.user.role)) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -167,7 +123,7 @@ export async function GET() {
     const membership = membershipMap.get(u.id);
     return {
       ...u,
-      currentRole: membership?.role ?? null,
+      currentRole: normalizeAppRole(membership?.role ?? null) ?? null,
       currentClientId: membership?.clientId ?? null,
       membershipStatus: membership?.status ?? null,
     };
@@ -180,7 +136,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!(await assertAdminAccess())) {
+  const session = await getDemoSession();
+  if (!canManageUsers(session.user.role)) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -195,37 +152,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "userId, clientId, and role are required" }, { status: 400 });
   }
 
-  const validRoles = ["ADMIN", "INSTRUCTOR", "LEARNER"];
-  if (!validRoles.includes(role)) {
+  const normalizedRole = normalizeAppRole(role);
+  const validRoles = ["CLIENT_ADMIN", "INSTRUCTOR", "LEARNER"];
+  if (!normalizedRole || !validRoles.includes(normalizedRole)) {
     return NextResponse.json({ error: "Invalid role" }, { status: 400 });
   }
 
   const admin = createSupabaseAdminClient();
 
   // Ensure user exists in the users table before creating membership
+  let internalUserId = userId;
   const authUser = await admin.auth.admin.getUserById(userId);
   if (authUser.data?.user?.email) {
-    const email = authUser.data.user.email;
+    const email = authUser.data.user.email.toLowerCase();
     const name = authUser.data.user.user_metadata?.full_name || email;
     const image = authUser.data.user.user_metadata?.avatar_url ?? null;
 
-    // Upsert without role to use DB default (enum is still 'USER' until migration 006 runs)
-    await admin
+    const { data: existingUser } = await admin
       .from("users")
-      .upsert({ email, name, image }, { onConflict: "email", ignoreDuplicates: true });
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existingUser?.id) {
+      internalUserId = existingUser.id;
+      await admin.from("users").update({ name, image }).eq("id", existingUser.id);
+    } else {
+      const { data: insertedUser, error: insertError } = await admin
+        .from("users")
+        .insert({ id: userId, email, name, image })
+        .select("id")
+        .single();
+
+      if (insertError) {
+        return NextResponse.json({ error: insertError.message }, { status: 500 });
+      }
+
+      internalUserId = insertedUser.id;
+    }
   }
 
-  // Get the internal user id (from users table, not auth UUID)
-  const { data: userRow } = await admin
-    .from("users")
-    .select("id")
-    .eq("id", userId)
-    .maybeSingle();
-
-  const internalUserId = userRow?.id ?? userId;
-
   const { error } = await admin.from("client_memberships").upsert(
-    { user_id: internalUserId, client_id: clientId, role, status: "ACTIVE" },
+    { user_id: internalUserId, client_id: clientId, role: normalizedRole, status: "ACTIVE" },
     { onConflict: "client_id,user_id" }
   );
 

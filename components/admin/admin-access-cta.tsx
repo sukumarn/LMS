@@ -16,7 +16,7 @@ export function AdminAccessCta() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ role: "ADMIN" })
+        body: JSON.stringify({ role: "CLIENT_ADMIN" })
       });
 
       router.refresh();

@@ -209,16 +209,10 @@ export async function POST(request: Request) {
     const name = authUser.data.user.user_metadata?.full_name || email;
     const image = authUser.data.user.user_metadata?.avatar_url ?? null;
 
-    // Try LEARNER role first, fall back to USER for older schemas
-    const { error: upsertErr } = await admin
+    // Upsert without role to use DB default (enum is still 'USER' until migration 006 runs)
+    await admin
       .from("users")
-      .upsert({ email, name, image, role: "LEARNER" }, { onConflict: "email", ignoreDuplicates: true });
-
-    if (upsertErr) {
-      await admin
-        .from("users")
-        .upsert({ email, name, image, role: "USER" }, { onConflict: "email", ignoreDuplicates: true });
-    }
+      .upsert({ email, name, image }, { onConflict: "email", ignoreDuplicates: true });
   }
 
   // Get the internal user id (from users table, not auth UUID)

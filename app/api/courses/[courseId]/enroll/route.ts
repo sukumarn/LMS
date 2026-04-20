@@ -22,14 +22,13 @@ async function ensureUserExists(
     return { userId: existingUser.id, error: null };
   }
 
-  // User doesn't exist — insert with role set explicitly to LEARNER
+  // User doesn't exist — insert without role to use DB default ('USER')
   const { data: newUser, error: insertError } = await supabase
     .from("users")
     .insert({
       email,
       name,
       image: image ?? null,
-      role: "LEARNER",
     })
     .select("id")
     .single();

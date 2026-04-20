@@ -7,33 +7,66 @@ const DEFAULT_CLIENT_ID = "b1776b77-2994-49fb-bb10-6db11ad1f001"; // Operator Ca
 
 async function ensureUserExists(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
   email: string,
   name: string,
   image: string | null
 ) {
-  // First, check if user already exists by email
-  const { data: existingUser } = await supabase
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // First, check if user already exists by exact or case-insensitive email.
+  const { data: existingUser, error: existingUserError } = await supabase
     .from("users")
     .select("id")
-    .eq("email", email)
+    .ilike("email", normalizedEmail)
     .maybeSingle();
 
+  if (existingUserError) {
+    console.error("[enroll] user lookup error:", existingUserError);
+    return { userId: null, error: existingUserError };
+  }
+
   if (existingUser) {
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({
+        name,
+        image: image ?? null
+      })
+      .eq("id", existingUser.id);
+
+    if (updateError) {
+      console.error("[enroll] user update error:", updateError);
+      return { userId: null, error: updateError };
+    }
+
     return { userId: existingUser.id, error: null };
   }
 
-  // User doesn't exist — insert without role to use DB default ('USER')
+  // User doesn't exist — insert with the auth UUID so app users and auth users stay aligned.
   const { data: newUser, error: insertError } = await supabase
     .from("users")
     .insert({
-      email,
+      id: userId,
+      email: normalizedEmail,
       name,
-      image: image ?? null,
+      image: image ?? null
     })
     .select("id")
     .single();
 
   if (insertError) {
+    // A concurrent request may have inserted the user. Retry one lookup before failing.
+    const { data: recoveredUser } = await supabase
+      .from("users")
+      .select("id")
+      .ilike("email", normalizedEmail)
+      .maybeSingle();
+
+    if (recoveredUser?.id) {
+      return { userId: recoveredUser.id, error: null };
+    }
+
     console.error("[enroll] user insert error:", insertError);
     return { userId: null, error: insertError };
   }
@@ -64,6 +97,7 @@ export async function POST(_: Request, { params }: { params: { courseId: string 
   // Ensure user exists in the users table
   const { userId: internalUserId, error: userError } = await ensureUserExists(
     supabase,
+    session.user.id,
     session.user.email,
     session.user.name,
     session.user.image ?? null
@@ -73,23 +107,22 @@ export async function POST(_: Request, { params }: { params: { courseId: string 
     return NextResponse.json({ error: "Unable to prepare learner profile" }, { status: 500 });
   }
 
-  if (!activeClientId) {
-    // Auto-create a LEARNER membership for the default client
-    const { error: membershipError } = await supabase.from("client_memberships").upsert(
-      {
-        client_id: DEFAULT_CLIENT_ID,
-        user_id: internalUserId,
-        role: "LEARNER",
-        status: "ACTIVE",
-      },
-      { onConflict: "client_id,user_id" }
-    );
+  activeClientId = activeClientId ?? DEFAULT_CLIENT_ID;
 
-    if (membershipError) {
-      console.error("[enroll] membership upsert error:", membershipError);
-    }
+  // Ensure the learner has an active membership in the client they are registering under.
+  const { error: membershipError } = await supabase.from("client_memberships").upsert(
+    {
+      client_id: activeClientId,
+      user_id: internalUserId,
+      role: "LEARNER",
+      status: "ACTIVE"
+    },
+    { onConflict: "client_id,user_id" }
+  );
 
-    activeClientId = DEFAULT_CLIENT_ID;
+  if (membershipError) {
+    console.error("[enroll] membership upsert error:", membershipError);
+    return NextResponse.json({ error: "Unable to prepare learner membership" }, { status: 500 });
   }
 
   const { data: course, error: courseError } = await supabase
